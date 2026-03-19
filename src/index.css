@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-emerald: #10b981;
+  --color-brand-indigo: #4f46e5;
+  --color-zenith-bg: #ffffff;
+  --color-zenith-surface: #f9fafb;
+  --color-zenith-border: #f3f4f6;
+  --font-inter: "Inter", sans-serif;
+}
+
+:root {
+  background-color: var(--color-zenith-bg);
+  color: #111827;
+  font-family: var(--font-inter);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(229, 231, 235, 0.5);
+}
+.logo-shadow {
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.15));
+}
