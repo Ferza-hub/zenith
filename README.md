@@ -1,73 +1,42 @@
-# React + TypeScript + Vite
+# Zenith — Product Opportunity Signals
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Find winning products in 5 seconds — no bloated dashboards.**
 
-Currently, two official plugins are available:
+Zenith is an ultra-minimalist product research tool designed specifically for e-commerce sellers in the US market (**Amazon, Etsy, and TikTok Shop**). Forget bloated dashboards and confusing charts—Zenith delivers clear, actionable product signals in seconds, so you can stop researching and start selling.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Key Features
 
-## React Compiler
+*   **5-Second Validation:** A clean, lightning-fast table interface allows you to scan 20+ product opportunities at a glance.
+*   **Opportunity Score Engine:** An intelligent algorithm that calculates a score (0-100) based on the sweet spot between high revenue potential and low review competition.
+*   **Multi-Platform Intelligence:**
+    *   **Amazon US:** Signals based on BSR (Best Sellers Rank) movements and review velocity.
+    *   **Etsy US:** Signals based on search trends, favorites velocity, and seasonal demand.
+    *   **TikTok Shop US:** Signals based on viral potential, impulse price points, and trending aesthetics.
+*   **Actionable Insights:** Every product includes a concise "Signal Insight" explaining exactly *why* it's a winning opportunity.
+*   **Live Signal Status:** A dedicated real-time indicator shows exactly when signals were last updated, ensuring you stay ahead of the competition.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 💳 Payment & Access
 
-## Expanding the ESLint configuration
+Zenith uses a simple subscription model.
+- **Price:** $19/month
+- **Payment Link:** [https://paypal.me/zenithintelligence](https://paypal.me/zenithintelligence)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+After payment, you can sign in using your **Google** or **Apple** account to unlock all restricted signals.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 🛠️ Tech Stack
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **Frontend:** React + TypeScript + Vite
+- **Styling:** Vanilla CSS + Tailwind-like utilities
+- **Backend/Auth:** Firebase (Authentication & Firestore)
+- **Deployment:** Vercel
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 🚀 Getting Started
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Run development server: `npm run dev`
+4. Build for production: `npm run build`
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+---
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+**Zenith — No bloated dashboards. Just clear opportunities.**

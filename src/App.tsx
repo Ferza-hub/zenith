@@ -289,7 +289,7 @@ function App() {
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
 
-  const checkoutUrl = 'https://YOUR-STORE.lemonsqueezy.com/buy/YOUR_PRODUCT_ID';
+  const checkoutUrl = 'https://paypal.me/zenithintelligence';
 
   // ── Firebase Auth listener ─────────────────────────────────────────────────
   useEffect(() => {
