@@ -1,40 +1,120 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { format } from 'date-fns';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, OAuthProvider, signOut } from 'firebase/auth';
+import {
+  onAuthStateChanged, signInWithPopup,
+  GoogleAuthProvider, OAuthProvider, signOut,
+} from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import logo from './assets/logo.png';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from 'recharts';
 
 type Platform = 'amazon' | 'etsy' | 'tiktok';
+type AuthMode = 'idle' | 'login';
+type ViewMode = 'engine' | 'table';
 
 type Product = {
-  id: string;
-  name: string;
-  price: number;
-  revenue: number;
-  reviews: number;
-  score: number;
-  insight: string;
-  bestFor: Platform[];
+  id: string; name: string; price: number; revenue: number; reviews: number;
+  score: number; insight: string; bestFor: Platform[]; contentAngle: string;
+  urgency: 'low' | 'mid' | 'high'; momentum: number; competitionGap: number;
+  radarDims: { demand: number; competition: number; margin: number; trend: number; speed: number };
 };
 
-type AuthMode = 'idle' | 'login' | 'register';
+const PLATFORM_META: Record<Platform, { label: string; hint: string; categories: string[]; color: string; bg: string }> = {
+  amazon: { label: 'Amazon', hint: 'BSR trends, review velocity & PPC opportunity in US marketplace.', categories: ['Home & Kitchen','Pet Supplies','Sports & Outdoors','Office Products','Beauty & Personal Care'], color: '#FF9900', bg: '#232F3E' },
+  etsy:   { label: 'Etsy',   hint: 'Search trends, favorites velocity & seasonal demand on Etsy US.',  categories: ['Home Decor','Jewelry & Accessories','Digital Downloads','Party Supplies','Baby & Kids'], color: '#ffffff', bg: '#F1641E' },
+  tiktok: { label: 'TikTok Shop', hint: 'Viral potential, impulse price points & trending product aesthetics.', categories: ['Skincare & Beauty','Kitchen Gadgets','Fitness & Wellness','Fashion Accessories','Home Aesthetic'], color: '#ffffff', bg: '#000000' },
+};
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
+type RawProduct = Omit<Product, 'id' | 'score' | 'momentum' | 'competitionGap' | 'radarDims'>;
 
-const PLATFORM_META: Record<Platform, { label: string; hint: string; categories: string[] }> = {
+const PRODUCT_DATA: Record<Platform, Record<string, RawProduct[]>> = {
   amazon: {
-    label: 'Amazon',
-    hint: 'Signals based on BSR trends, review velocity & PPC opportunity in US marketplace.',
-    categories: ['Home & Kitchen', 'Pet Supplies', 'Sports & Outdoors', 'Office Products', 'Beauty & Personal Care'],
+    'Home & Kitchen': [
+      { name: 'Silicone Utensil Set 6pc', price: 24, revenue: 18400, reviews: 87, insight: 'High BSR movement, low review count — strong PPC entry window', bestFor: ['amazon'], contentAngle: 'Lead with color variety + durability claim', urgency: 'high' },
+      { name: 'Magnetic Knife Strip 18"', price: 32, revenue: 12300, reviews: 42, insight: 'Rising search volume, few reviews — ideal before competition spikes', bestFor: ['amazon'], contentAngle: 'Lifestyle kitchen photography, space-saving angle', urgency: 'high' },
+      { name: 'Stackable Pantry Containers', price: 39, revenue: 27800, reviews: 210, insight: 'Steady BSR, reviews growing — window narrowing, act soon', bestFor: ['amazon','etsy'], contentAngle: 'Before/after pantry transformation', urgency: 'mid' },
+      { name: 'Herb Growing Kit Indoor', price: 28, revenue: 9800, reviews: 31, insight: 'Seasonal spike incoming — list now for Q4 positioning', bestFor: ['amazon','etsy'], contentAngle: 'Gift-ready packaging with seed variety story', urgency: 'high' },
+      { name: 'Oil Sprayer Bottle Glass', price: 18, revenue: 15200, reviews: 58, insight: 'Strong repeat purchase signal — good LTV for Subscribe & Save', bestFor: ['amazon'], contentAngle: 'Healthy cooking hook, mist vs pour comparison', urgency: 'mid' },
+      { name: 'Compost Bin Countertop', price: 35, revenue: 11600, reviews: 44, insight: 'Rising eco trend, low incumbents — low PPC cost right now', bestFor: ['amazon','etsy'], contentAngle: 'Eco-conscious lifestyle, odor-free claim front & center', urgency: 'high' },
+      { name: 'Adjustable Pot Lid Holder', price: 22, revenue: 7400, reviews: 19, insight: 'Very low reviews for search volume — wide open entry', bestFor: ['amazon'], contentAngle: 'Problem-solution: steamy stovetop mess solved', urgency: 'high' },
+      { name: 'Whetstone Knife Sharpener Kit', price: 41, revenue: 8900, reviews: 26, insight: 'High average order, low reviews — premium listing opportunity', bestFor: ['amazon'], contentAngle: 'Skill/craft angle, "professional results at home"', urgency: 'mid' },
+      { name: 'Cold Brew Coffee Maker', price: 36, revenue: 19300, reviews: 88, insight: 'Consistent demand year-round, moderate competition', bestFor: ['amazon'], contentAngle: 'Cost savings vs café, summer-first imagery', urgency: 'low' },
+      { name: 'Sous Vide Precision Cooker', price: 79, revenue: 14200, reviews: 34, insight: 'High price point, low review density — strong margin signal', bestFor: ['amazon'], contentAngle: 'Restaurant-quality at home, gift for foodies', urgency: 'mid' },
+    ],
+    'Pet Supplies': [
+      { name: 'Interactive Cat Feeder Puzzle', price: 22, revenue: 14200, reviews: 53, insight: 'Gift-driven product, low reviews — strong Q4 PPC play', bestFor: ['amazon','etsy'], contentAngle: 'Cat enrichment angle, vet-recommended hook', urgency: 'high' },
+      { name: 'Slow Feed Dog Bowl', price: 19, revenue: 9700, reviews: 38, insight: 'Low competition, steady BSR — clean entry with good images', bestFor: ['amazon'], contentAngle: 'Vet-recommended, bloat prevention education', urgency: 'mid' },
+      { name: 'Cat Window Perch Hammock', price: 34, revenue: 7300, reviews: 22, insight: 'Rising trend, very low reviews — early mover advantage', bestFor: ['amazon','etsy'], contentAngle: 'Happy cat lifestyle, easy install story', urgency: 'high' },
+      { name: 'Dog Car Seat Cover Waterproof', price: 52, revenue: 23900, reviews: 144, insight: 'High revenue, moderate reviews — listing quality is the lever', bestFor: ['amazon'], contentAngle: 'Protection + easy install + machine washable trifecta', urgency: 'low' },
+      { name: 'Pet First Aid Kit', price: 38, revenue: 6200, reviews: 18, insight: 'Underserved niche, real demand — low PPC cost right now', bestFor: ['amazon'], contentAngle: "Peace of mind angle, what's inside story", urgency: 'high' },
+      { name: 'Cat Calming Collar', price: 26, revenue: 11800, reviews: 47, insight: 'Repeat purchase potential — Subscribe & Save angle viable', bestFor: ['amazon'], contentAngle: 'Before/after anxiety behavior, vet-safe claim', urgency: 'mid' },
+      { name: 'Dog Training Clicker Set', price: 12, revenue: 5600, reviews: 15, insight: 'Ultra-low barrier to test — bundle to increase AOV', bestFor: ['amazon'], contentAngle: 'New puppy owner angle, bundle with treat pouch', urgency: 'mid' },
+      { name: 'Automatic Pet Water Fountain', price: 42, revenue: 29400, reviews: 720, insight: 'High volume but competitive — premium positioning required', bestFor: ['amazon'], contentAngle: 'Quiet motor + filter system as differentiator', urgency: 'low' },
+      { name: 'Orthopedic Dog Bed Medium', price: 68, revenue: 31000, reviews: 390, insight: 'Strong revenue, reviews slowing — still viable with niche angle', bestFor: ['amazon'], contentAngle: 'Senior dog angle, vet orthopedic endorsement hook', urgency: 'low' },
+      { name: 'Pet Grooming Glove', price: 15, revenue: 18600, reviews: 260, insight: 'Maturing — bundle strategy recommended to defend margin', bestFor: ['amazon'], contentAngle: 'Shedding season seasonal spike, ASMR pet content', urgency: 'low' },
+    ],
+    'Sports & Outdoors': [
+      { name: 'Resistance Bands Set 5pc', price: 27, revenue: 22100, reviews: 340, insight: 'High volume, maturing — brand differentiation is the key lever', bestFor: ['amazon'], contentAngle: 'Progressive difficulty system as unique angle', urgency: 'low' },
+      { name: 'Hydration Vest Trail Running', price: 64, revenue: 9400, reviews: 28, insight: 'Niche but loyal buyer segment — strong margin, low CPC', bestFor: ['amazon'], contentAngle: 'Ultra-runner aspirational angle, fit guide content', urgency: 'mid' },
+      { name: 'Yoga Blocks Cork Set', price: 29, revenue: 8700, reviews: 33, insight: 'Low competition in natural materials segment — eco angle wins', bestFor: ['amazon','etsy'], contentAngle: 'Sustainable yoga studio aesthetic, eco cert angle', urgency: 'high' },
+      { name: 'Camping Hammock Lightweight', price: 37, revenue: 14900, reviews: 78, insight: 'Strong summer demand signal — position now before peak', bestFor: ['amazon'], contentAngle: 'Setup speed claim, ultralight backpacking audience', urgency: 'high' },
+      { name: 'Balance Board Wooden', price: 48, revenue: 5800, reviews: 14, insight: 'Emerging category, very low reviews — early mover upside', bestFor: ['amazon','etsy'], contentAngle: 'WFH standing desk companion, physical therapy', urgency: 'high' },
+      { name: 'Hiking Poles Collapsible', price: 56, revenue: 7600, reviews: 21, insight: 'Low reviews relative to category size — good entry signal', bestFor: ['amazon'], contentAngle: 'One-click lock system, weight vs competitor chart', urgency: 'mid' },
+      { name: 'Ab Roller Wheel with Mat', price: 22, revenue: 19300, reviews: 187, insight: 'Established demand — focus on quality perception & images', bestFor: ['amazon'], contentAngle: 'Knee protection mat as differentiator, beginner angle', urgency: 'low' },
+      { name: 'Foam Roller Deep Tissue', price: 31, revenue: 16800, reviews: 95, insight: 'Steady demand, moderate competition — listing quality matters', bestFor: ['amazon'], contentAngle: 'Recovery science angle, physical therapist hook', urgency: 'low' },
+      { name: 'Adjustable Jump Rope Speed', price: 18, revenue: 12500, reviews: 61, insight: 'Gift-friendly with seasonal spikes — bundle opportunity', bestFor: ['amazon'], contentAngle: 'Cable length customization + counter display', urgency: 'mid' },
+      { name: 'Portable Pull-Up Bar Doorway', price: 43, revenue: 31600, reviews: 510, insight: 'Crowded but high volume — bundle with accessories to stand out', bestFor: ['amazon'], contentAngle: 'No-damage claim + weight capacity trust signal', urgency: 'low' },
+    ],
+    'Office Products': [
+      { name: 'Desk Organizer Bamboo', price: 34, revenue: 11200, reviews: 44, insight: 'Eco angle performs well with WFH buyers — low PPC cost', bestFor: ['amazon','etsy'], contentAngle: 'Aesthetic desk setup photography, WFH lifestyle', urgency: 'mid' },
+      { name: 'Cable Management Box', price: 26, revenue: 9300, reviews: 36, insight: 'Consistent search demand, low reviews — clean entry', bestFor: ['amazon'], contentAngle: 'Before/after cable chaos transformation', urgency: 'mid' },
+      { name: 'Ergonomic Footrest Under Desk', price: 39, revenue: 16800, reviews: 89, insight: 'Strong repeat searches, moderate reviews — real opportunity', bestFor: ['amazon'], contentAngle: 'Posture + comfort + productivity angle', urgency: 'mid' },
+      { name: 'Wireless Charging Desk Pad', price: 62, revenue: 7400, reviews: 19, insight: 'Low competition in premium segment — high margin potential', bestFor: ['amazon'], contentAngle: 'Minimal desk aesthetic, premium gift angle', urgency: 'high' },
+      { name: 'Whiteboard Sticker Roll', price: 22, revenue: 5900, reviews: 12, insight: 'Underserved niche, clear use case — test with low MOQ', bestFor: ['amazon'], contentAngle: 'Home office + kids homework station dual angle', urgency: 'high' },
+      { name: 'Laptop Stand Portable Foldable', price: 41, revenue: 24600, reviews: 180, insight: 'Steady demand, moderate competition — listing quality is lever', bestFor: ['amazon'], contentAngle: 'Work from anywhere angle, heat dissipation claim', urgency: 'low' },
+      { name: 'Sticky Note Dispenser Desktop', price: 18, revenue: 4200, reviews: 8, insight: 'Ultra low reviews — wide open if demand validated by PPC', bestFor: ['amazon'], contentAngle: 'Desk aesthetics + organization productivity system', urgency: 'high' },
+      { name: 'Monitor Stand Riser Adjustable', price: 48, revenue: 28700, reviews: 310, insight: 'High demand, growing competitive — still room with strong images', bestFor: ['amazon'], contentAngle: 'Ergonomic eye-level claim + cable management shelf', urgency: 'low' },
+      { name: 'Blue Light Glasses Set 3pk', price: 29, revenue: 18400, reviews: 220, insight: 'Maturing — bundle or private label for margin defense', bestFor: ['amazon'], contentAngle: 'Family bundle angle, sleep quality science hook', urgency: 'low' },
+      { name: 'Desk Lamp LED with USB Port', price: 37, revenue: 31200, reviews: 490, insight: 'High volume — differentiate on design or smart features', bestFor: ['amazon'], contentAngle: 'Color temperature control + USB hub value add', urgency: 'low' },
+    ],
+    'Beauty & Personal Care': [
+      { name: 'Jade Facial Roller Set', price: 24, revenue: 13600, reviews: 71, insight: 'Demand stable, competition moderate — strong branding wins', bestFor: ['amazon','etsy'], contentAngle: 'Depuffing morning routine angle, gua sha pairing', urgency: 'low' },
+      { name: 'LED Face Mask Therapy', price: 79, revenue: 11300, reviews: 28, insight: 'Premium niche, low reviews — strong margin & gifting signal', bestFor: ['amazon'], contentAngle: 'Before/after skin transformation, dermatologist angle', urgency: 'high' },
+      { name: 'Konjac Facial Sponge Set', price: 19, revenue: 7200, reviews: 22, insight: 'Low reviews for demand level — good entry window now', bestFor: ['amazon','etsy'], contentAngle: 'Clean beauty + sensitive skin angle', urgency: 'high' },
+      { name: 'Dermaplaning Tool Set', price: 26, revenue: 12100, reviews: 55, insight: 'Steady search trend — solid if reviews stay low', bestFor: ['amazon'], contentAngle: 'Peach fuzz + product absorption hook, GRWM angle', urgency: 'mid' },
+      { name: 'Face Steamer Nano Ionic', price: 54, revenue: 8400, reviews: 19, insight: 'Low competition, growing demand — timing is favorable', bestFor: ['amazon'], contentAngle: 'Spa-at-home positioning, open pores science claim', urgency: 'high' },
+      { name: 'Scalp Massager Shampoo Brush', price: 14, revenue: 21400, reviews: 290, insight: 'Maturing — bundle with hair care for margin defense', bestFor: ['amazon'], contentAngle: 'Hair growth + circulation claim, ASMR wash video', urgency: 'low' },
+      { name: 'Nail Dip Powder Kit Starter', price: 44, revenue: 9600, reviews: 31, insight: 'Rising trend, niche — early positioning opportunity', bestFor: ['amazon'], contentAngle: 'Salon cost savings, beginner-friendly angle', urgency: 'high' },
+      { name: 'Hair Diffuser Universal', price: 22, revenue: 15800, reviews: 88, insight: 'Accessory play — pairs well with any curly hair brand', bestFor: ['amazon','tiktok'], contentAngle: 'Curly hair community, heat damage reduction claim', urgency: 'mid' },
+      { name: 'Eyelash Growth Serum', price: 32, revenue: 18700, reviews: 142, insight: 'Moderate competition — differentiate on ingredients claim', bestFor: ['amazon','tiktok'], contentAngle: 'Before/after 30-day transformation challenge', urgency: 'mid' },
+      { name: 'Eyebrow Stencil Kit 12pc', price: 16, revenue: 8900, reviews: 34, insight: 'Gift-friendly, low barrier — strong influencer seeding angle', bestFor: ['amazon','tiktok'], contentAngle: 'Beginner brow tutorial, 12 shape variety hook', urgency: 'mid' },
+    ],
   },
   etsy: {
-    label: 'Etsy',
-    hint: 'Signals based on search trends, favorites velocity & seasonal demand on Etsy US.',
-    categories: ['Home Decor', 'Jewelry & Accessories', 'Digital Downloads', 'Party Supplies', 'Baby & Kids'],
-  },
+    'Home Decor': [
+      { name: 'Personalized Family Name Sign', price: 38, revenue: 8700, reviews: 24, insight: 'Consistent bestseller — personalization drives favorites velocity', bestFor: ['etsy'], contentAngle: 'Housewarming & wedding gift angle, fast turnaround', urgency: 'mid' },
+      { name: 'Boho Macrame Wall Hanging', price: 45, revenue: 11200, reviews: 61, insight: 'Seasonal spike in Q4 — list with gift-ready photography', bestFor: ['etsy'], contentAngle: 'Neutral boho aesthetic, size comparison lifestyle shots', urgency: 'mid' },
+      { name: 'Custom City Map Print', price: 29, revenue: 14300, reviews: 88, insight: 'Digital + physical SKUs possible — strong repeat gifting demand', bestFor: ['etsy'], contentAngle: 'Anniversary & wedding gift angle, custom city', urgency: 'low' },
+      { name: 'Dried Flower Wreath', price: 52, revenue: 6800, reviews: 18, insight: 'Rising Pinterest-to-Etsy trend — early organic search advantage', bestFor: ['etsy'], contentAngle: 'Front door aesthetic, seasonal refresh story', urgency: 'high' },
+      { name: 'Ceramic Catch-All Tray', price: 34, revenue: 9100, reviews: 31, insight: 'Low competition in handmade ceramic niche — favorites velocity strong', bestFor: ['etsy'], contentAngle: 'Minimal handmade aesthetic, entryway & nightstand', urgency: 'high' },
+      { name: 'Wax Seal Stamp Set', price: 27, revenue: 7600, reviews: 14, insight: 'Gift-driven, repeat buyers — bundle with wax beads for AOV', bestFor: ['etsy'], contentAngle: 'Wedding stationery angle, letter writing revival', urgency: 'high' },
+      { name: 'Linen Pillow Cover Set', price: 42, revenue: 12800, reviews: 55, insight: 'Consistent demand, moderate favorites count — strong seasonal peak', bestFor: ['etsy'], contentAngle: 'Natural texture close-up, neutral tone family', urgency: 'mid' },
+      { name: 'Pressed Flower Art Frame', price: 36, revenue: 5400, reviews: 12, insight: 'Low competition, rising search trend — timing favorable now', bestFor: ['etsy'], contentAngle: 'Cottagecore aesthetic, custom birth flower angle', urgency: 'high' },
+      { name: 'Custom Candle Gift Set', price: 48, revenue: 16200, reviews: 79, insight: 'High gifting demand — subscription angle viable for repeat buyers', bestFor: ['etsy','tiktok'], contentAngle: 'Scent description storytelling, gift box packaging', urgency: 'low' },
+      { name: 'Geometric Planter Pot', price: 31, revenue: 8300, reviews: 26, insight: 'Steady Etsy search demand — eco packaging increases conversion', bestFor: ['etsy'], contentAngle: 'Plant + pot styled lifestyle, indoor jungle aesthetic', urgency: 'mid' },
+    ],
+    'Jewelry & Accessories': [
+      { name: 'Dainty Name Necklace Gold', price: 34, revenue: 19400, reviews: 110, insight: 'Top Etsy category — differentiate on turnaround time & packaging', bestFor: ['etsy'], contentAngle: 'Same-day shipping signal, gift box unboxing', urgency: 'low' },
+      { name: 'Birth Month Flower Ring', price: 28, revenue: 11700, reviews: 47, insight: 'Trending search term, low competition — capitalize now', bestFor: ['etsy','tiktok'], contentAngle: 'Birth month meaning story, birthday gift angle', urgency: 'high' },
+      { name: 'Custom Birthstone Bracelet', price: 42, revenue: 14200, reviews: 63, insight: "Strong gifting signal — Mother's Day & birthday peak incoming", bestFor: ['etsy'], contentAngle: "Family birthstone stacking, Mother's Day urgency", urgency: 'mid' },
+      { name: 'Pressed Flower Resin Earrings', price: 24, revenue: 7800, reviews: 22, insight: 'Rising handmade trend — low favorites count means early mover upside', bestFor: ['etsy'], contentAngle: 'Nature-inspired, each pair unique angle', urgency: 'high' },
+      { name: 'Initial Charm Anklet', price: 19, revenue: 9300, reviews: 31, insight: 'Summer search spike predictable — position inventory now', bestFor: ['etsy'], contentAngle: 'Beach & summer lifestyle, dainty stack styling', urgency: 'high' },
+      { name: 'Pearl Huggie Earrings Set', price: 26, revenue: 12100, reviews: 58, insight: 'TikTok aesthetic crossover — strong organic traffic signal', bestFor: ['etsy','tiktok'], contentAngle: 'Old money aesthetic, everyday luxury angle', urgency: 'mid' },
+      { name: 'Zodiac Constellation Necklace', price: 36, revenue: 8900, reviews: 34, insight: 'Steady year-round demand — gift-ready angle is key', bestFor: ['etsy'], contentAngle: 'Celestial aesthetic, birthday & zodiac gift angle', urgency: 'mid' },
+      { name: 'Leather Cord Wrap Bracelet', price: 22, revenue: 6400, reviews: 18, insight: 'Low entry cost, consistent search — good first product to test', bestFor: ['etsy'], contentAngle: 'Bohemian stacking, unisex angle', urgency: 'mid' },
+      { name: 'Personalized Bar Necklace', price: 44, revenue: 22600, reviews: 130, insight: 'High volume category — speed of fulfillment is the differentiator', bestFor: ['etsy'], contentAngle: 'Custom coordinates & dates, gift message packaging', urgency: 'low' },
+      { name: 'Wax Seal Wax   },
   tiktok: {
     label: 'TikTok Shop',
     hint: 'Signals based on viral potential, impulse price points & trending product aesthetics on TikTok Shop US.',
