@@ -1,12 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
-  onAuthStateChanged, signInWithPopup,
-  GoogleAuthProvider, OAuthProvider, signOut,
+  onAuthStateChanged,
+  signOut,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from './lib/firebase';
+import { auth } from './lib/firebase';
 import logo from './assets/logo.png';
-import { Check, X, ArrowRight, TrendingUp, TrendingDown, Target, Zap, Clock, AlertCircle, LayoutList, Layers, RefreshCw, Wifi } from 'lucide-react';
+import { Check, X, ArrowRight, TrendingUp, TrendingDown, Zap, Clock, AlertCircle, LayoutList, Layers, RefreshCw, Wifi, Heart } from 'lucide-react';
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from 'recharts';
 import {
   getTrendSignal,
@@ -21,7 +20,6 @@ import {
 } from './lib/realtime-engine';
 
 type Platform = 'amazon' | 'etsy' | 'tiktok';
-type AuthMode = 'idle' | 'login';
 type ViewMode = 'engine' | 'table';
 
 type Product = {
@@ -35,6 +33,361 @@ const PLATFORM_META: Record<Platform, { label: string; hint: string; categories:
   amazon: { label: 'Amazon', hint: 'BSR trends, review velocity & PPC opportunity in US marketplace.', categories: ['Home & Kitchen','Pet Supplies','Sports & Outdoors','Office Products','Beauty & Personal Care'], color: '#FF9900', bg: '#232F3E' },
   etsy:   { label: 'Etsy',   hint: 'Search trends, favorites velocity & seasonal demand on Etsy US.',  categories: ['Home Decor','Jewelry & Accessories','Digital Downloads','Party Supplies','Baby & Kids'], color: '#ffffff', bg: '#F1641E' },
   tiktok: { label: 'TikTok Shop', hint: 'Viral potential, impulse price points & trending product aesthetics.', categories: ['Skincare & Beauty','Kitchen Gadgets','Fitness & Wellness','Fashion Accessories','Home Aesthetic'], color: '#ffffff', bg: '#000000' },
+};
+
+const PRODUCT_DATA: Record<Platform, Record<string, Omit<Product, 'id' | 'score'>[]>> = {
+  amazon: {
+    'Home & Kitchen': [
+      { name: 'Silicone Utensil Set 6pc', price: 24, revenue: 18400, reviews: 87, insight: 'High BSR movement', bestFor: ['amazon'] },
+      { name: 'Magnetic Knife Strip 18"', price: 32, revenue: 12300, reviews: 42, insight: 'Rising search volume', bestFor: ['amazon'] },
+      { name: 'Stackable Pantry Containers', price: 39, revenue: 27800, reviews: 210, insight: 'Steady BSR, reviews growing', bestFor: ['amazon', 'etsy'] },
+      { name: 'Herb Growing Kit Indoor', price: 28, revenue: 9800, reviews: 31, insight: 'Seasonal spike incoming', bestFor: ['amazon', 'etsy'] },
+      { name: 'Oil Sprayer Bottle Glass', price: 18, revenue: 15200, reviews: 58, insight: 'Strong repeat purchase signal', bestFor: ['amazon'] },
+      { name: 'Compost Bin Countertop', price: 35, revenue: 11600, reviews: 44, insight: 'Rising eco trend', bestFor: ['amazon', 'etsy'] },
+      { name: 'Adjustable Pot Lid Holder', price: 22, revenue: 7400, reviews: 19, insight: 'Very low reviews', bestFor: ['amazon'] },
+      { name: 'Whetstone Knife Sharpener Kit', price: 41, revenue: 8900, reviews: 26, insight: 'High average order', bestFor: ['amazon'] },
+      { name: 'Cold Brew Coffee Maker', price: 36, revenue: 19300, reviews: 88, insight: 'Consistent demand', bestFor: ['amazon'] },
+      { name: 'Sous Vide Precision Cooker', price: 79, revenue: 14200, reviews: 34, insight: 'High price point', bestFor: ['amazon'] },
+    ],
+    'Pet Supplies': [
+      { name: 'Interactive Cat Feeder Puzzle', price: 22, revenue: 14200, reviews: 53, insight: 'Gift-driven product', bestFor: ['amazon', 'etsy'] },
+      { name: 'Slow Feed Dog Bowl', price: 19, revenue: 9700, reviews: 38, insight: 'Low competition, steady BSR', bestFor: ['amazon'] },
+    ],
+    'Sports & Outdoors': [
+      { name: 'Resistance Bands Set 5pc', price: 27, revenue: 22100, reviews: 340, insight: 'High volume, maturing', bestFor: ['amazon'] },
+      { name: 'Hydration Vest Trail Running', price: 64, revenue: 9400, reviews: 28, insight: 'Niche but loyal buyer', bestFor: ['amazon'] },
+    ],
+    'Office Products': [
+      { name: 'Desk Organizer Bamboo', price: 34, revenue: 11200, reviews: 44, insight: 'Eco angle performs well', bestFor: ['amazon', 'etsy'] },
+      { name: 'Cable Management Box', price: 26, revenue: 9300, reviews: 36, insight: 'Consistent search demand', bestFor: ['amazon'] },
+    ],
+    'Beauty & Personal Care': [
+      { name: 'Jade Facial Roller Set', price: 24, revenue: 13600, reviews: 71, insight: 'Demand stable', bestFor: ['amazon', 'etsy'] },
+      { name: 'LED Face Mask Therapy', price: 79, revenue: 11300, reviews: 28, insight: 'Premium niche, low reviews', bestFor: ['amazon'] },
+    ],
+  },
+  etsy: {
+    'Home Decor': [
+      { name: 'Personalized Family Name Sign', price: 38, revenue: 8700, reviews: 24, insight: 'Consistent bestseller', bestFor: ['etsy'] },
+      { name: 'Boho Macrame Wall Hanging', price: 45, revenue: 11200, reviews: 61, insight: 'Seasonal spike in Q4', bestFor: ['etsy'] },
+    ],
+    'Jewelry & Accessories': [
+      { name: 'Dainty Name Necklace Gold', price: 34, revenue: 19400, reviews: 110, insight: 'Top Etsy category', bestFor: ['etsy'] },
+      { name: 'Birth Month Flower Ring', price: 28, revenue: 11700, reviews: 47, insight: 'Trending search term', bestFor: ['etsy', 'tiktok'] },
+    ],
+    'Digital Downloads': [
+      { name: 'Wedding Budget Spreadsheet', price: 12, revenue: 8200, reviews: 0, insight: 'Zero fulfillment cost', bestFor: ['etsy'] },
+      { name: 'Self-Care Planner Printable', price: 9, revenue: 11400, reviews: 0, insight: 'High search volume', bestFor: ['etsy'] },
+    ],
+    'Party Supplies': [
+      { name: 'Custom Banner Party Set', price: 28, revenue: 12400, reviews: 54, insight: 'Strong gifting signal', bestFor: ['etsy'] },
+      { name: 'Balloon Garland Kit', price: 34, revenue: 18700, reviews: 88, insight: 'High volume, consistent demand', bestFor: ['etsy'] },
+    ],
+    'Baby & Kids': [
+      { name: 'Personalized Name Puzzle', price: 36, revenue: 14200, reviews: 62, insight: 'Etsy bestseller', bestFor: ['etsy'] },
+      { name: 'Custom Baby Milestone Blanket', price: 48, revenue: 11700, reviews: 44, insight: 'High gifting intent', bestFor: ['etsy'] },
+    ],
+  },
+  tiktok: {
+    'Skincare & Beauty': [
+      { name: 'Pore Vacuum Blackhead Remover', price: 19, revenue: 22400, reviews: 89, insight: 'Viral demo potential', bestFor: ['tiktok', 'amazon'] },
+      { name: 'Gua Sha Facial Tool Rose Quartz', price: 16, revenue: 18700, reviews: 142, insight: 'Already viral', bestFor: ['tiktok', 'amazon'] },
+    ],
+    'Kitchen Gadgets': [
+      { name: 'Aesthetic Butter Cutter Roller', price: 14, revenue: 16800, reviews: 42, insight: 'Made-for-TikTok demo', bestFor: ['tiktok'] },
+      { name: 'Electric Whisk Mini Handheld', price: 12, revenue: 21400, reviews: 88, insight: 'Under $15 impulse buy', bestFor: ['tiktok', 'amazon'] },
+    ],
+    'Fitness & Wellness': [
+      { name: 'Acupressure Mat & Pillow Set', price: 32, revenue: 14800, reviews: 54, insight: 'Satisfying reaction content', bestFor: ['tiktok', 'amazon'] },
+      { name: 'Posture Corrector Brace', price: 24, revenue: 22100, reviews: 130, insight: 'Problem-solution hook', bestFor: ['tiktok', 'amazon'] },
+    ],
+    'Fashion Accessories': [
+      { name: 'Gold Butterfly Hair Clips Set', price: 12, revenue: 14200, reviews: 48, insight: 'GRWM content staple', bestFor: ['tiktok'] },
+      { name: 'Y2K Tinted Sunglasses', price: 16, revenue: 18700, reviews: 88, insight: 'Aesthetic crossover', bestFor: ['tiktok'] },
+    ],
+    'Home Aesthetic': [
+      { name: 'LED Neon Sign Custom', price: 49, revenue: 16800, reviews: 54, insight: 'Room tour & aesthetic', bestFor: ['tiktok', 'etsy'] },
+      { name: 'Aesthetic Candle Set Minimal', price: 34, revenue: 12400, reviews: 44, insight: 'Room aesthetic content', bestFor: ['tiktok', 'etsy'] },
+    ],
+  },
+};
+
+const PLATFORM_META_LOOKUP = PLATFORM_META;
+
+function scoreColor(score: number) {
+  if (score <= 40) return { bar: '#ef4444', text: 'text-red-500' };
+  if (score <= 75) return { bar: '#facc15', text: 'text-yellow-500' };
+  return { bar: '#22c55e', text: 'text-green-500' };
+}
+
+function UrgencyBadge({ urgency }: { urgency?: 'low' | 'mid' | 'high' }) {
+  if (urgency === 'high') return (
+    <div className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black uppercase text-red-600 bg-red-50 px-2.5 py-1 rounded-full animate-pulse border border-red-100 whitespace-nowrap">
+      <Zap className="w-3 h-3" /> Act Now
+    </div>
+  );
+  if (urgency === 'mid') return (
+    <div className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black uppercase text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100 whitespace-nowrap">
+      <Clock className="w-3 h-3" /> Good Window
+    </div>
+  );
+  return (
+    <div className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black uppercase text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100 whitespace-nowrap">
+      <Check className="w-3 h-3" /> Stable
+    </div>
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
+function App() {
+  const [platform, setPlatform] = useState<Platform>('amazon');
+  const [category, setCategory] = useState<string>('Home & Kitchen');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [dataSource, setDataSource] = useState<'live' | 'seeded'>('seeded');
+
+  const [viewMode, setViewMode] = useState<ViewMode>('engine');
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const [activeSignalsCount, setActiveSignalsCount] = useState(842);
+
+  // Live realtime signals
+  const [liveMomentum, setLiveMomentum] = useState(0);
+  const [momentumDirection, setMomentumDirection] = useState<'up' | 'down'>('up');
+  const [currentTrend, setCurrentTrend] = useState<TrendSignal | null>(null);
+  const [currentSignal, setCurrentSignal] = useState<JungleScoutSignal | null>(null);
+  const momentumRef = useRef<number>(75);
+
+  // Auth state — always unlocked, no paywall
+  const isUnlocked = true;
+
+  const donateUrl = 'https://paypal.me/zenithintelligence';
+
+  // ── Firebase Auth listener (kept for logout only) ──────────────────────────
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, () => {});
+    return unsub;
+  }, []);
+
+  // ── Real-Time Product Generation (Async, Trend-Enriched) ──────────────────
+  const generateProducts = useCallback(async () => {
+    setIsGenerating(true);
+    const pool = PRODUCT_DATA[platform]?.[category] ?? [];
+    if (pool.length === 0) { setProducts([]); setIsGenerating(false); return; }
+
+    const shuffled = [...pool].sort((a, b) => {
+      const seedA = (a.name.charCodeAt(0) * 31 + a.price) ^ Math.floor(Date.now() / 7200000);
+      const seedB = (b.name.charCodeAt(0) * 31 + b.price) ^ Math.floor(Date.now() / 7200000);
+      return seedA - seedB;
+    });
+
+    const trendKeyword = category.split(' & ')[0] + ' products';
+    const trendSig = await getTrendSignal(trendKeyword);
+    const anyLive = trendSig.source === 'trends';
+    setDataSource(anyLive ? 'live' : 'seeded');
+
+    const fresh: Product[] = shuffled.map((p, i) => {
+      const signal = computeJungleScoutSignal(
+        p.name, p.price, p.revenue, p.reviews, platform, category, trendSig
+      );
+      const score = computeOpportunityScore(signal, trendSig);
+      const urgency = classifyUrgency(score, trendSig, signal);
+      const contentAngle = generateContentAngle(platform, p.name, signal.priceHistory[6] ?? p.price, trendSig);
+      const radarDims = computeRadarDims(signal, trendSig);
+
+      return {
+        ...p,
+        id: `${platform}-${category}-${i}`,
+        price: signal.priceHistory[6] ?? p.price,
+        revenue: signal.estimatedMonthlyRevenue,
+        reviews: signal.reviewCount,
+        score,
+        urgency,
+        momentum: signal.momentumScore,
+        competitionGap: signal.competitionGap,
+        contentAngle,
+        radarDims,
+      } as Product;
+    });
+
+    setProducts(fresh);
+    setIsGenerating(false);
+  }, [platform, category]);
+
+  useEffect(() => {
+    generateProducts();
+    setCurrentIndex(0);
+  }, [generateProducts]);
+
+  // ── Real-Time Momentum Feed ────────────────────────────────────────────────
+  useEffect(() => {
+    const activeP = products[currentIndex];
+    if (!activeP) return;
+
+    let cancelled = false;
+    const keyword = activeP.name.split(' ').slice(0, 3).join(' ');
+    getTrendSignal(keyword).then(trend => {
+      if (cancelled) return;
+      setCurrentTrend(trend);
+      const sig = computeJungleScoutSignal(
+        activeP.name, activeP.price, activeP.revenue, activeP.reviews,
+        platform, category, trend
+      );
+      setCurrentSignal(sig);
+      const anchoredMomentum = sig.momentumScore;
+      momentumRef.current = anchoredMomentum;
+      setLiveMomentum(anchoredMomentum);
+      setMomentumDirection(trend.trendDelta >= 0 ? 'up' : 'down');
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, products.length]);
+
+  // ── Live Micro-Drift ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setLiveMomentum(prev => {
+        const anchor = momentumRef.current;
+        const pull = (anchor - prev) * 0.15;
+        const jitter = (Math.random() * 3) - 1.3;
+        const next = Math.min(100, Math.max(0, prev + jitter + pull));
+        setMomentumDirection(next > prev ? 'up' : 'down');
+        return next;
+      });
+      setActiveSignalsCount(prev => getActiveSignalsDrift(prev));
+    }, 1800);
+    return () => clearInterval(iv);
+  }, []);
+
+  function handlePlatformChange(p: Platform) {
+    setPlatform(p);
+    setCategory(PLATFORM_META_LOOKUP[p].categories[0]);
+  }
+
+  function handleSkip() {
+    if (currentIndex < products.length - 1) setCurrentIndex(c => c + 1);
+  }
+
+  function handleCommit() {
+    if (currentIndex < products.length - 1) setCurrentIndex(c => c + 1);
+  }
+
+  function handleRowClick(index: number) {
+    setCurrentIndex(index);
+    setViewMode('engine');
+  }
+
+  async function handleSignOut() {
+    await signOut(auth);
+  }
+
+  // ── Data formatting ────────────────────────────────────────────────────────
+  const activeProduct = products[currentIndex];
+  const nextProduct = products[currentIndex + 1];
+
+  const radarData = useMemo(() => {
+    if (!activeProduct?.radarDims) return [];
+    return [
+      { subject: 'DEMAND', A: activeProduct.radarDims.demand, fullMark: 100 },
+      { subject: 'GAP', A: activeProduct.radarDims.gap, fullMark: 100 },
+      { subject: 'MARGIN', A: activeProduct.radarDims.margin, fullMark: 100 },
+      { subject: 'TREND', A: activeProduct.radarDims.trend, fullMark: 100 },
+      { subject: 'SPEED', A: activeProduct.radarDims.speed, fullMark: 100 },
+    ];
+  }, [activeProduct]);
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-gray-50 text-black font-sans selection:bg-black selection:text-white pb-24">
+      <div className="max-w-6xl mx-auto px-6 py-8">
+
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <header className="mb-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="Zenith" className="w-10 h-10 object-contain rounded-lg shadow-sm" />
+            <div>
+              <span className="text-2xl font-black tracking-tighter uppercase">ZENITH</span>
+              <p className="text-xs text-gray-500 mt-0.5 font-medium">Tactical Decision Engine</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-green-600 bg-green-50 px-3 py-1.5 rounded-full border border-green-100 hidden sm:flex">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+              </span>
+              {activeSignalsCount.toLocaleString()} Signals Active
+            </div>
+
+            <div className={`hidden sm:flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+              dataSource === 'live'
+                ? 'text-blue-600 bg-blue-50 border-blue-100'
+                : 'text-gray-400 bg-gray-50 border-gray-200'
+            }`}>
+              <Wifi className="w-3 h-3" />
+              {dataSource === 'live' ? 'Live' : 'Sim'}
+            </div>
+
+            <button
+              onClick={() => window.open(donateUrl, '_blank')}
+              className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 border-rose-500 border px-3 py-1.5 rounded-full uppercase tracking-wider transition-colors"
+            >
+              <Heart className="w-3 h-3" /> Support
+            </button>
+
+            {auth.currentUser && (
+              <button
+                onClick={handleSignOut}
+                className="text-xs text-gray-400 hover:text-black font-bold uppercase tracking-wider transition-colors ml-2"
+              >
+                Logout
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* ── Platform & View Mode Selector ──────────────────────────────── */}
+        <div className="flex flex-col md:flex-row gap-6 mb-8 items-start md:items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+          
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+            <div className="flex bg-gray-100 p-1.5 rounded-xl border border-gray-200">
+              <button 
+                onClick={() => setViewMode('engine')} 
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  viewMode === 'engine' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <Layers className="w-4 h-4" /> Engine
+              </button>
+              <button 
+                onClick={() => setViewMode('table')} 
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  viewMode === 'table' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <LayoutList className="w-4 h-4" /> All Signals
+              </button>
+            </div>
+
+            <div className="w-px h-6 bg-gray-200 hidden md:block" />
+
+            <div className="flex gap-0 border border-gray-200 rounded-xl overflow-hidden w-fit">
+              {(['amazon', 'etsy', 'tiktok'] as Platform[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handlePlatformChange(p)}
+                  className={`px-5 py-2 text-xs font-bold tracking-widest uppercase transition-colors border-r border-gray-200 last:border-r-0 flex items-center gap-2 ${platform === p
+                      ? p === 'amazon'
+                        ? 'bg-[#232F3E] text-[#FF9900]'
+                        : p === 'etsy'
+                          ? 'bg-[#F1641E] text-white'
+                          : 'bg-black text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-black'
+                    }`}
+                >
+                  {PLATFORM_META_LOOKUP[p].label}
+                </b  tiktok: { label: 'TikTok Shop', hint: 'Viral potential, impulse price points & trending product aesthetics.', categories: ['Skincare & Beauty','Kitchen Gadgets','Fitness & Wellness','Fashion Accessories','Home Aesthetic'], color: '#ffffff', bg: '#000000' },
 };
 
 const PRODUCT_DATA: Record<Platform, Record<string, Omit<Product, 'id' | 'score'>[]>> = {
